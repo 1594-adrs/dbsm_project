@@ -30,6 +30,7 @@
 #include <limits.h>        // Constants for integer limits (INT_MAX, etc.)
 #include <math.h>          // Mathematical functions (abs, etc.)
 #include <windows.h>       // Windows-specific functions (console UTF-8 support)
+#include <stdarg.h>        // Variable argument list support for variadic functions
 #include "structures.c"    // Custom data structures for database tables
 
 // Function prototypes for sorting algorithms
@@ -53,8 +54,10 @@ int ParseExchangeRateDate(const char* dateString, dateStructure* parsedDate);
 
 // Function prototypes for report generation
 void GenerateReport2ProductTypesAndLocations(const char* sortType);
-void GenerateReportHeader(void);
-void GenerateReportFooter(time_t startTime);
+void GenerateReport5CustomerSalesListing(const char* sortType);
+void WriteToReport(FILE* txtFile, const char* format, ...);
+void GenerateReportHeader(FILE* txtFile, const char* reportTitle);
+void GenerateReportFooter(FILE* txtFile, time_t startTime);
 
 /*
  * Function: ClearOutput
@@ -66,6 +69,36 @@ void GenerateReportFooter(time_t startTime);
 void ClearOutput(void) {
     system("cls");
 }//end function definition ClearOutput
+
+/*
+ * Function: WriteToReport
+ * Purpose: Writes formatted output to both report file and console simultaneously
+ * Parameters: txtFile - FILE pointer to the report text file (if NULL, only writes to console)
+ *            format - printf-style format string
+ *            ... - variable arguments matching the format string
+ * Returns: void
+ * Note: Uses variadic arguments to support flexible formatting like printf
+ *       Ensures report content is displayed to user while being saved to file
+ */
+void WriteToReport(FILE* txtFile, const char* format, ...) {
+    va_list args1;                                 // First argument list for file
+    va_list args2;                                 // Second argument list for console
+    
+    va_start(args1, format);                       // Initialize first va_list
+    va_copy(args2, args1);                         // Copy for second use
+    
+    // Write to file if valid file pointer provided
+    if (txtFile != NULL) {
+        vfprintf(txtFile, format, args1);
+        fflush(txtFile);                           // Ensure immediate write
+    }
+    
+    // Always write to console for user feedback
+    vprintf(format, args2);
+    
+    va_end(args1);                                 // Clean up argument lists
+    va_end(args2);
+}//end function definition WriteToReport
 
 // ====================== HELPER FUNCTIONS ======================
 
@@ -1325,199 +1358,6 @@ int CompareSalesByProductKey(const void* record1, const void* record2) {
     }
 }//end function definition CompareSalesByProductKey
 
-/*
- * Function: TestSortSalesTable
- * Purpose: Demonstrates sorting functionality with Sales table
- * Parameters: sortType - "Bubble" or "Merge" to specify sorting algorithm
- * Returns: void
- * Note: Creates a timestamped sorted file for testing purposes
- */
-void TestSortSalesTable(const char* sortType) {
-    char outputFileName[300] = {0};                    // Output file name buffer
-    int recordsSorted = 0;                             // Number of records sorted
-    time_t startTime = 0;                              // Start time for timing
-    time_t endTime = 0;                                // End time for timing
-    
-    printf("\nTesting %s sort on Sales table...\n", sortType);
-    
-    // Generate timestamped output filename
-    GenerateSortedFileName("Sales", sortType, outputFileName);
-    printf("Output file: %s\n", outputFileName);
-    
-    // Record start time
-    time(&startTime);
-    
-    // Perform sorting based on type
-    if (strcmp(sortType, "Bubble") == 0) {
-        recordsSorted = SortBubble("SalesTable.dat", outputFileName, 
-                                   sizeof(salesRecord), CompareSalesForSeasonalAnalysis);
-    } else if (strcmp(sortType, "Merge") == 0) {
-        recordsSorted = SortMerge("SalesTable.dat", outputFileName, 
-                                  sizeof(salesRecord), CompareSalesForSeasonalAnalysis);
-    }
-    
-    // Record end time
-    time(&endTime);
-    
-    if (recordsSorted > 0) {
-        printf("Successfully sorted %d records using %s sort\n", recordsSorted, sortType);
-        printf("Time taken: %.0f seconds\n", difftime(endTime, startTime));
-        printf("Output saved to: %s\n", outputFileName);
-    } else {
-        printf("Error occurred during sorting\n");
-    }
-}//end function definition TestSortSalesTable
-
-/*
- * Function: TestSortStoresTable
- * Purpose: Demonstrates sorting functionality with smaller Stores table
- * Parameters: sortType - "Bubble" or "Merge" to specify sorting algorithm
- * Returns: void
- * Note: Creates a timestamped sorted file for testing with small dataset
- */
-void TestSortStoresTable(const char* sortType) {
-    char outputFileName[300] = {0};                    // Output file name buffer
-    int recordsSorted = 0;                             // Number of records sorted
-    time_t startTime = 0;                              // Start time for timing
-    time_t endTime = 0;                                // End time for timing
-    
-    printf("\nTesting %s sort on Stores table (smaller dataset)...\n", sortType);
-    
-    // Generate timestamped output filename
-    GenerateSortedFileName("Stores", sortType, outputFileName);
-    printf("Output file: %s\n", outputFileName);
-    
-    // Record start time
-    time(&startTime);
-    
-    // For stores, we'll sort by country name
-    if (strcmp(sortType, "Bubble") == 0) {
-        recordsSorted = SortBubble("StoresTable.dat", outputFileName, 
-                                   sizeof(storeRecord), CompareStoresByCountry);
-    } else if (strcmp(sortType, "Merge") == 0) {
-        recordsSorted = SortMerge("StoresTable.dat", outputFileName, 
-                                  sizeof(storeRecord), CompareStoresByCountry);
-    }
-    
-    // Record end time
-    time(&endTime);
-    
-    if (recordsSorted > 0) {
-        printf("Successfully sorted %d records using %s sort\n", recordsSorted, sortType);
-        printf("Time taken: %.0f seconds\n", difftime(endTime, startTime));
-        printf("Output saved to: %s\n", outputFileName);
-    } else {
-        printf("Error occurred during sorting\n");
-    }
-}//end function definition TestSortStoresTable
-
-/*
- * Function: TestBinarySearch
- * Purpose: Tests binary search functionality on sorted sales data
- * Parameters: None
- * Returns: void
- * Note: Searches for user-specified ProductKey in sorted sales file
- *       Demonstrates O(log n) search performance
- */
-void TestBinarySearch(void) {
-    unsigned short int searchProductKey = 0;          // Product key to search for
-    char sortedFileName[300] = {0};                   // Name of sorted file
-    salesRecord searchKey;                            // Search key structure
-    long foundPosition = -1;                          // Position where record was found
-    int searchResult = 0;                             // Result of search operation
-    FILE* sortedFile = NULL;                          // File pointer for verification
-    salesRecord foundRecord;                          // Record found at position
-    int fileChoice = 0;                               // User choice for which sorted file to use
-    
-    printf("\n=== Binary Search Test ===\n");
-    printf("This test searches for a ProductKey in a sorted Sales file.\n\n");
-    
-    // Ask user which sorted file to use
-    printf("Which sorted file do you want to search?\n");
-    printf("1. Use existing MergeSorted file (from Option 6.2)\n");
-    printf("2. Use existing BubbleSorted file (from Option 6.1)\n");
-    printf("Your choice: ");
-    
-    if (scanf("%d", &fileChoice) != 1) {
-        printf("Invalid input.\n");
-        while (getchar() != '\n');
-        return;
-    }
-    
-    if (fileChoice == 1) {
-        // Look for most recent MergeSorted file
-        sprintf(sortedFileName, "MergeSortedSales.dat");
-    } else if (fileChoice == 2) {
-        // Look for most recent BubbleSorted file
-        sprintf(sortedFileName, "BubbleSortedSales.dat");
-    } else {
-        printf("Invalid choice.\n");
-        return;
-    }
-    
-    // Check if file exists
-    sortedFile = fopen(sortedFileName, "rb");
-    if (sortedFile == NULL) {
-        printf("Error: Sorted file %s not found.\n", sortedFileName);
-        printf("Please run Option 6 first to generate sorted data.\n");
-        return;
-    }
-    fclose(sortedFile);
-    
-    // Ask user for product key to search
-    printf("\nEnter ProductKey to search (1-2517): ");
-    if (scanf("%hu", &searchProductKey) != 1) {
-        printf("Invalid input.\n");
-        while (getchar() != '\n');
-        return;
-    }
-    
-    // Initialize search key
-    InitializeStructureToZero(&searchKey, sizeof(salesRecord));
-    searchKey.productKey = searchProductKey;
-    
-    printf("\nSearching for ProductKey %u in %s...\n", searchProductKey, sortedFileName);
-    
-    // Perform binary search
-    searchResult = SearchBinary(sortedFileName, &searchKey, sizeof(salesRecord),
-                                CompareSalesByProductKey, &foundPosition);
-    
-    if (searchResult == 1) {
-        printf("\n*** FOUND ***\n");
-        printf("ProductKey %u found at position %ld\n", searchProductKey, foundPosition);
-        
-        // Read and display the found record
-        sortedFile = fopen(sortedFileName, "rb");
-        if (sortedFile != NULL) {
-            fseek(sortedFile, foundPosition * sizeof(salesRecord), SEEK_SET);
-            if (fread(&foundRecord, sizeof(salesRecord), 1, sortedFile) == 1) {
-                printf("\nRecord details:\n");
-                printf("  Order Number: %ld\n", foundRecord.orderNumber);
-                printf("  Line Item: %u\n", foundRecord.lineItem);
-                printf("  Product Key: %u\n", foundRecord.productKey);
-                printf("  Customer Key: %u\n", foundRecord.customerKey);
-                printf("  Store Key: %u\n", foundRecord.storeKey);
-                printf("  Quantity: %u\n", foundRecord.quantity);
-                printf("  Currency: %s\n", foundRecord.currencyCode);
-                printf("  Order Date: %u/%u/%u\n", 
-                       foundRecord.orderDate.monthOfYear,
-                       foundRecord.orderDate.dayOfMonth,
-                       foundRecord.orderDate.yearValue);
-            }
-            fclose(sortedFile);
-        }
-    } else if (searchResult == 0) {
-        printf("\n*** NOT FOUND ***\n");
-        printf("ProductKey %u not found in the file.\n", searchProductKey);
-    } else {
-        printf("\n*** ERROR ***\n");
-        printf("An error occurred during the search.\n");
-    }
-    
-    printf("\nNote: Binary search has O(log n) complexity.\n");
-    printf("It's extremely fast even for large datasets!\n");
-}//end function definition TestBinarySearch
-
 // ====================== CURRENCY CONVERSION ======================
 
 /*
@@ -1733,11 +1573,525 @@ double ConvertCurrencyToUSD(double amount, const char* currencyCode, const dateS
 // ====================== REPORT GENERATORS ======================
 
 /*
+ * Function: GetReportPreferences
+ * Purpose: Asks user for report display preferences (limit, order)
+ * Parameters: maxRecords - pointer to store max records to display (0 = all)
+ *            ascending - pointer to store sort order (1 = ascending, 0 = descending)
+ * Returns: int - 1 if successful, 0 if user cancelled
+ * Note: Interactive function to configure report output
+ */
+int GetReportPreferences(int* maxRecords, int* ascending) {
+    int limitChoice = 0;
+    int orderChoice = 0;
+    
+    printf("\n=== Report Configuration ===\n");
+    
+    // Ask about record limit
+    printf("How many records do you want to display?\n");
+    printf("1. All records\n");
+    printf("2. Specific number of records\n");
+    printf("Your choice: ");
+    
+    if (scanf("%d", &limitChoice) != 1) {
+        printf("Invalid input.\n");
+        while (getchar() != '\n');
+        return 0;
+    }
+    
+    if (limitChoice == 1) {
+        *maxRecords = 0;  // 0 means all records
+    } else if (limitChoice == 2) {
+        printf("Enter the number of records to display: ");
+        if (scanf("%d", maxRecords) != 1 || *maxRecords < 1) {
+            printf("Invalid number.\n");
+            while (getchar() != '\n');
+            return 0;
+        }
+    } else {
+        printf("Invalid choice.\n");
+        return 0;
+    }
+    
+    // Ask about sort order
+    printf("\nSort order:\n");
+    printf("1. Ascending (A-Z, 0-9)\n");
+    printf("2. Descending (Z-A, 9-0)\n");
+    printf("Your choice: ");
+    
+    if (scanf("%d", &orderChoice) != 1) {
+        printf("Invalid input.\n");
+        while (getchar() != '\n');
+        return 0;
+    }
+    
+    if (orderChoice == 1) {
+        *ascending = 1;
+    } else if (orderChoice == 2) {
+        *ascending = 0;
+    } else {
+        printf("Invalid choice.\n");
+        return 0;
+    }
+    
+    return 1;
+}//end function definition GetReportPreferences
+
+/*
+ * Function: SearchInReport2
+ * Purpose: Allows user to search for specific products in Report 2 sorted data
+ * Parameters: sortedFileName - name of the sorted report file
+ * Returns: void
+ * Note: Interactive binary search with multiple search criteria options
+ */
+void SearchInReport2(const char* sortedFileName) {
+    char searchProductName[31] = {0};
+    char searchContinent[20] = {0};
+    char searchCountry[20] = {0};
+    productCustomerRecord searchKey;
+    productCustomerRecord foundRecord;
+    long startPos = -1;
+    long endPos = -1;
+    FILE* sortedFile = NULL;
+    int searchResult = 0;
+    int continueSearching = 1;
+    char choice = 'n';
+    int searchOption = 0;
+    
+    printf("\n=== Search in Report 2 ===\n");
+    
+    while (continueSearching == 1) {
+        printf("\nSearch options:\n");
+        printf("1. Search by Product Name\n");
+        printf("2. Search by Product Name + Continent\n");
+        printf("3. Search by Product Name + Continent + Country\n");
+        printf("4. Browse all records\n");
+        printf("0. Exit search\n");
+        printf("Your choice: ");
+        
+        if (scanf("%d", &searchOption) != 1) {
+            printf("Invalid input.\n");
+            while (getchar() != '\n');
+            searchOption = 0;
+        }
+        
+        if (searchOption == 0) {
+            continueSearching = 0;
+        } else if (searchOption >= 1 && searchOption <= 4) {
+            // Initialize search key
+            InitializeStructureToZero(&searchKey, sizeof(productCustomerRecord));
+            
+            if (searchOption >= 1) {
+                printf("Enter product name to search: ");
+                scanf(" %30[^\n]", searchProductName);
+                strncpy(searchKey.product.productName, searchProductName, 29);
+                searchKey.product.productName[29] = '\0';
+            }
+            
+            if (searchOption >= 2) {
+                printf("Enter continent: ");
+                scanf(" %19[^\n]", searchContinent);
+                strncpy(searchKey.customer.continent, searchContinent, 19);
+                searchKey.customer.continent[19] = '\0';
+            }
+            
+            if (searchOption >= 3) {
+                printf("Enter country: ");
+                scanf(" %19[^\n]", searchCountry);
+                strncpy(searchKey.customer.country, searchCountry, 19);
+                searchKey.customer.country[19] = '\0';
+            }
+            
+            // Perform binary search range
+            searchResult = SearchBinaryRange(sortedFileName, &searchKey, 
+                                            sizeof(productCustomerRecord),
+                                            CompareProductsForReport2, &startPos, &endPos);
+            
+            if (searchResult == 1 && startPos >= 0) {
+                printf("\n*** FOUND ***\n");
+                
+                if (searchOption == 1) {
+                    printf("Product '%s' found! Showing all locations:\n\n", searchProductName);
+                } else if (searchOption == 2) {
+                    printf("Product '%s' in '%s' found!\n\n", searchProductName, searchContinent);
+                } else if (searchOption == 3) {
+                    printf("Product '%s' in '%s, %s' found!\n\n", searchProductName, searchCountry, searchContinent);
+                }
+                
+                // Open file and read matching records
+                sortedFile = fopen(sortedFileName, "rb");
+                if (sortedFile != NULL) {
+                    fseek(sortedFile, startPos * sizeof(productCustomerRecord), SEEK_SET);
+                    
+                    printf("Locations:\n");
+                    printf("------------------------------------------------------\n");
+                    printf("%-30s %-15s %-15s %-20s %-20s\n", "Product", "Continent", "Country", "State", "City");
+                    printf("------------------------------------------------------\n");
+                    
+                    long currentPos = startPos;
+                    int matchCount = 0;
+                    
+                    while (currentPos <= endPos && 
+                           fread(&foundRecord, sizeof(productCustomerRecord), 1, sortedFile) == 1) {
+                        
+                        // Apply additional filters based on search option
+                        int matches = 1;
+                        
+                        if (searchOption >= 1 && strcmp(foundRecord.product.productName, searchProductName) != 0) {
+                            matches = 0;
+                        }
+                        if (searchOption >= 2 && strcmp(foundRecord.customer.continent, searchContinent) != 0) {
+                            matches = 0;
+                        }
+                        if (searchOption >= 3 && strcmp(foundRecord.customer.country, searchCountry) != 0) {
+                            matches = 0;
+                        }
+                        
+                        if (matches == 1) {
+                            printf("%-30s %-15s %-15s %-20s %-20s\n",
+                                   foundRecord.product.productName,
+                                   foundRecord.customer.continent,
+                                   foundRecord.customer.country,
+                                   foundRecord.customer.state,
+                                   foundRecord.customer.city);
+                            matchCount++;
+                        }
+                        
+                        currentPos++;
+                    }
+                    
+                    printf("------------------------------------------------------\n");
+                    printf("Total matching locations: %d\n", matchCount);
+                    fclose(sortedFile);
+                }
+            } else if (searchOption == 4) {
+                // Browse all records
+                printf("\n=== All Products and Locations ===\n");
+                sortedFile = fopen(sortedFileName, "rb");
+                if (sortedFile != NULL) {
+                    printf("%-30s %-15s %-15s %-20s %-20s\n", "Product", "Continent", "Country", "State", "City");
+                    printf("------------------------------------------------------\n");
+                    
+                    int count = 0;
+                    int maxShow = 50;
+                    
+                    printf("Show how many records? (0 = all): ");
+                    scanf("%d", &maxShow);
+                    
+                    while (fread(&foundRecord, sizeof(productCustomerRecord), 1, sortedFile) == 1) {
+                        if (maxShow > 0 && count >= maxShow) {
+                            printf("... (showing first %d records)\n", maxShow);
+                            break;
+                        }
+                        
+                        printf("%-30s %-15s %-15s %-20s %-20s\n",
+                               foundRecord.product.productName,
+                               foundRecord.customer.continent,
+                               foundRecord.customer.country,
+                               foundRecord.customer.state,
+                               foundRecord.customer.city);
+                        count++;
+                    }
+                    
+                    printf("------------------------------------------------------\n");
+                    printf("Total records shown: %d\n", count);
+                    fclose(sortedFile);
+                }
+            } else {
+                printf("\n*** NOT FOUND ***\n");
+                printf("No matching records found.\n");
+            }
+            
+            printf("\nPerform another search? (y/n): ");
+            scanf(" %c", &choice);
+            if (choice != 'y' && choice != 'Y') {
+                continueSearching = 0;
+            }
+        } else {
+            printf("Invalid option.\n");
+        }
+    }
+}//end function definition SearchInReport2
+
+/*
+ * Function: SearchInReport5
+ * Purpose: Allows user to search for specific customers or orders in Report 5 sorted data
+ * Parameters: sortedFileName - name of the sorted report file
+ * Returns: void
+ * Note: Interactive binary search with multiple search criteria options
+ */
+void SearchInReport5(const char* sortedFileName) {
+    char searchCustomerName[40] = {0};
+    salesCustomerRecord searchKey;
+    salesCustomerRecord foundRecord;
+    productRecord currentProduct;
+    long startPos = -1;
+    long endPos = -1;
+    FILE* sortedFile = NULL;
+    FILE* productsFile = NULL;
+    int searchResult = 0;
+    int continueSearching = 1;
+    char choice = 'n';
+    double customerTotal = 0.0;
+    int searchOption = 0;
+    long searchOrderNumber = 0;
+    unsigned short searchProductKey = 0;
+    
+    printf("\n=== Search in Report 5 ===\n");
+    
+    while (continueSearching == 1) {
+        printf("\nSearch options:\n");
+        printf("1. Search by Customer Name\n");
+        printf("2. Search by Customer Name + Order Date\n");
+        printf("3. Search by Customer Name + Order Number\n");
+        printf("4. Search by Customer Name + Product Key\n");
+        printf("5. Browse all customers\n");
+        printf("0. Exit search\n");
+        printf("Your choice: ");
+        
+        if (scanf("%d", &searchOption) != 1) {
+            printf("Invalid input.\n");
+            while (getchar() != '\n');
+            searchOption = 0;
+        }
+        
+        if (searchOption == 0) {
+            continueSearching = 0;
+        } else if (searchOption >= 1 && searchOption <= 5) {
+            // Initialize search key
+            InitializeStructureToZero(&searchKey, sizeof(salesCustomerRecord));
+            
+            if (searchOption >= 1 && searchOption <= 4) {
+                printf("Enter customer name to search: ");
+                scanf(" %39[^\n]", searchCustomerName);
+                strncpy(searchKey.customer.name, searchCustomerName, 39);
+                searchKey.customer.name[39] = '\0';
+            }
+            
+            if (searchOption == 2) {
+                printf("Enter order date (MM/DD/YYYY): ");
+                int month, day, year;
+                if (scanf("%d/%d/%d", &month, &day, &year) == 3) {
+                    searchKey.sale.orderDate.monthOfYear = month;
+                    searchKey.sale.orderDate.dayOfMonth = day;
+                    searchKey.sale.orderDate.yearValue = year;
+                } else {
+                    printf("Invalid date format.\n");
+                    while (getchar() != '\n');
+                    continue;
+                }
+            }
+            
+            if (searchOption == 3) {
+                printf("Enter order number: ");
+                if (scanf("%ld", &searchOrderNumber) != 1) {
+                    printf("Invalid order number.\n");
+                    while (getchar() != '\n');
+                    continue;
+                }
+            }
+            
+            if (searchOption == 4) {
+                printf("Enter product key: ");
+                if (scanf("%hu", &searchProductKey) != 1) {
+                    printf("Invalid product key.\n");
+                    while (getchar() != '\n');
+                    continue;
+                }
+                searchKey.sale.productKey = searchProductKey;
+            }
+            
+            // Perform binary search range
+            searchResult = SearchBinaryRange(sortedFileName, &searchKey, 
+                                            sizeof(salesCustomerRecord),
+                                            CompareSalesForReport5, &startPos, &endPos);
+            
+            if (searchResult == 1 && startPos >= 0) {
+                printf("\n*** FOUND ***\n");
+                printf("Showing results for '%s':\n\n", searchCustomerName);
+                
+                // Open files
+                sortedFile = fopen(sortedFileName, "rb");
+                productsFile = OpenFileWithErrorCheck("ProductsTable.dat", "rb");
+                
+                if (sortedFile != NULL && productsFile != NULL) {
+                    fseek(sortedFile, startPos * sizeof(salesCustomerRecord), SEEK_SET);
+                    
+                    printf("======================================================\n");
+                    
+                    long currentPos = startPos;
+                    long currentOrder = -1;
+                    customerTotal = 0.0;
+                    int matchCount = 0;
+                    
+                    while (currentPos <= endPos && 
+                           fread(&foundRecord, sizeof(salesCustomerRecord), 1, sortedFile) == 1) {
+                        
+                        // Apply additional filters based on search option
+                        int matches = 1;
+                        
+                        if (searchOption == 2) {
+                            if (foundRecord.sale.orderDate.monthOfYear != searchKey.sale.orderDate.monthOfYear ||
+                                foundRecord.sale.orderDate.dayOfMonth != searchKey.sale.orderDate.dayOfMonth ||
+                                foundRecord.sale.orderDate.yearValue != searchKey.sale.orderDate.yearValue) {
+                                matches = 0;
+                            }
+                        }
+                        
+                        if (searchOption == 3 && foundRecord.sale.orderNumber != searchOrderNumber) {
+                            matches = 0;
+                        }
+                        
+                        if (searchOption == 4 && foundRecord.sale.productKey != searchProductKey) {
+                            matches = 0;
+                        }
+                        
+                        if (matches == 1) {
+                            // Check if new order
+                            if (currentOrder != foundRecord.sale.orderNumber) {
+                                if (currentOrder != -1) {
+                                    printf("------------------------------------------------------\n");
+                                }
+                                currentOrder = foundRecord.sale.orderNumber;
+                                printf("\nOrder #%ld - Date: %04u/%02u/%02u\n",
+                                       currentOrder,
+                                       foundRecord.sale.orderDate.yearValue,
+                                       foundRecord.sale.orderDate.monthOfYear,
+                                       foundRecord.sale.orderDate.dayOfMonth);
+                            }
+                            
+                            // Find product
+                            int productFound = 0;
+                            rewind(productsFile);
+                            while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1 && productFound == 0) {
+                                if (currentProduct.productKey == foundRecord.sale.productKey) {
+                                    productFound = 1;
+                                }
+                            }
+                            
+                            if (productFound == 1) {
+                                double lineValue = currentProduct.unitPriceUSD * foundRecord.sale.quantity;
+                                lineValue = RoundToThirdDecimal(lineValue);
+                                
+                                printf("  ProductKey: %u - %s\n", 
+                                       foundRecord.sale.productKey,
+                                       currentProduct.productName);
+                                printf("    Quantity: %u  Price: $%.2f  Total: $%.2f\n",
+                                       foundRecord.sale.quantity,
+                                       currentProduct.unitPriceUSD,
+                                       lineValue);
+                                
+                                customerTotal += lineValue;
+                                matchCount++;
+                            }
+                        }
+                        
+                        currentPos++;
+                    }
+                    
+                    printf("======================================================\n");
+                    if (searchOption <= 4) {
+                        printf("TOTAL: $%.2f\n", customerTotal);
+                        printf("Total matching records: %d\n", matchCount);
+                    }
+                    
+                    fclose(sortedFile);
+                    fclose(productsFile);
+                }
+            } else if (searchOption == 5) {
+                // Browse all customers
+                printf("\n=== All Customers ===\n");
+                sortedFile = fopen(sortedFileName, "rb");
+                if (sortedFile != NULL) {
+                    char lastCustomer[40] = {0};
+                    int customerCount = 0;
+                    int maxShow = 20;
+                    
+                    printf("Show how many customers? (0 = all): ");
+                    scanf("%d", &maxShow);
+                    
+                    printf("\n%-40s %-15s %-15s\n", "Customer Name", "Orders", "Total Sales");
+                    printf("------------------------------------------------------\n");
+                    
+                    double currentCustomerTotal = 0.0;
+                    int currentCustomerOrders = 0;
+                    long lastOrder = -1;
+                    
+                    productsFile = OpenFileWithErrorCheck("ProductsTable.dat", "rb");
+                    
+                    while (fread(&foundRecord, sizeof(salesCustomerRecord), 1, sortedFile) == 1) {
+                        if (strcmp(lastCustomer, foundRecord.customer.name) != 0) {
+                            // New customer
+                            if (strlen(lastCustomer) > 0) {
+                                printf("%-40s %-15d $%.2f\n", lastCustomer, currentCustomerOrders, currentCustomerTotal);
+                                customerCount++;
+                                
+                                if (maxShow > 0 && customerCount >= maxShow) {
+                                    printf("... (showing first %d customers)\n", maxShow);
+                                    break;
+                                }
+                            }
+                            
+                            strncpy(lastCustomer, foundRecord.customer.name, 39);
+                            currentCustomerTotal = 0.0;
+                            currentCustomerOrders = 0;
+                            lastOrder = -1;
+                        }
+                        
+                        // Count order
+                        if (lastOrder != foundRecord.sale.orderNumber) {
+                            currentCustomerOrders++;
+                            lastOrder = foundRecord.sale.orderNumber;
+                        }
+                        
+                        // Calculate total
+                        if (productsFile != NULL) {
+                            rewind(productsFile);
+                            while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1) {
+                                if (currentProduct.productKey == foundRecord.sale.productKey) {
+                                    double lineValue = currentProduct.unitPriceUSD * foundRecord.sale.quantity;
+                                    currentCustomerTotal += RoundToThirdDecimal(lineValue);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Print last customer
+                    if (strlen(lastCustomer) > 0) {
+                        printf("%-40s %-15d $%.2f\n", lastCustomer, currentCustomerOrders, currentCustomerTotal);
+                        customerCount++;
+                    }
+                    
+                    printf("------------------------------------------------------\n");
+                    printf("Total customers shown: %d\n", customerCount);
+                    
+                    if (productsFile != NULL) fclose(productsFile);
+                    fclose(sortedFile);
+                }
+            } else {
+                printf("\n*** NOT FOUND ***\n");
+                printf("No matching records found.\n");
+            }
+            
+            printf("\nPerform another search? (y/n): ");
+            scanf(" %c", &choice);
+            if (choice != 'y' && choice != 'Y') {
+                continueSearching = 0;
+            }
+        } else {
+            printf("Invalid option.\n");
+        }
+    }
+}//end function definition SearchInReport5
+
+/*
  * Function: GenerateReport2ProductTypesAndLocations
  * Purpose: Generates Report 2 - Product Types and Customer Locations
  * Parameters: sortType - "Bubble" or "Merge" to specify sorting algorithm
  * Returns: void
- * Note: Sorts by ProductName + Continent + Country + State + City and displays results
+ * Note: Sorts by ProductName + Continent + Country + State + City
+ *       Generates timestamped .txt file with formatted report
+ *       Cleans up all temporary files after completion
  */
 void GenerateReport2ProductTypesAndLocations(const char* sortType) {
     FILE* salesFile = NULL;                            // Sales table file
@@ -1745,6 +2099,7 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
     FILE* customersFile = NULL;                        // Customers table file
     FILE* reportFile = NULL;                           // Combined report data file
     FILE* sortedFile = NULL;                           // Sorted report file
+    FILE* txtFile = NULL;                              // Output text report file
     salesRecord currentSale;                           // Current sales record
     productRecord currentProduct;                      // Current product record
     customerRecord currentCustomer;                    // Current customer record
@@ -1752,12 +2107,15 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
     productCustomerRecord displayRecord;               // Record for display
     char reportFileName[300] = {0};                    // Generated report file name
     char sortedFileName[300] = {0};                    // Sorted report file name
+    char txtFileName[300] = {0};                       // Text report file name
     char currentProductName[31] = {0};                 // Current product name for display
+    char reportTitle[100] = {0};                       // Report title
     int recordsProcessed = 0;                          // Number of records processed
     int recordsSorted = 0;                             // Number of records sorted
     int recordCount = 0;                               // Total records in sorted file
     int displayCount = 0;                              // Number of records displayed
-    const int MAX_DISPLAY_RECORDS = 50;                // Display limit
+    int maxDisplayRecords = 0;                         // Maximum records to display (0 = all)
+    int ascending = 1;                                 // Sort order (1 = ascending, 0 = descending)
     time_t startTime = 0;                              // Report generation start time
     time_t sortStartTime = 0;                          // Sorting start time
     time_t sortEndTime = 0;                            // Sorting end time
@@ -1770,9 +2128,26 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
     int sortTypeValid = 0;                             // Flag for sort type validation
     
     printf("\nGenerating Report 2: Product Types and Customer Locations\n");
+    
+    // Get user preferences
+    if (GetReportPreferences(&maxDisplayRecords, &ascending) == 0) {
+        printf("Report generation cancelled.\n");
+        return;
+    }
+    
     printf("Using %s sort algorithm...\n", sortType);
     
     time(&startTime);
+    
+    // Generate text report filename with timestamp
+    sprintf(txtFileName, "Report_2_Products_%s_%ld.txt", sortType, (long)time(NULL));
+    
+    // Open text file for report output
+    txtFile = OpenFileWithErrorCheck(txtFileName, "w");
+    if (txtFile == NULL) {
+        printf("Error: Cannot create report text file\n");
+        return;                                        // Early return on file creation failure
+    }
     
     // Create temporary file for combined data
     sprintf(reportFileName, "temp_report2_%ld.dat", (long)time(NULL));
@@ -1833,11 +2208,6 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
                 // Write combined record to temporary file
                 if (fwrite(&combinedRecord, sizeof(productCustomerRecord), 1, reportFile) == 1) {
                     recordsProcessed++;
-                    
-                    // Show progress every 1000 records
-                    if (recordsProcessed % 1000 == 0) {
-                        printf("Processed %d records...\n", recordsProcessed);
-                    }
                 }
             }
         }
@@ -1890,62 +2260,548 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
         }
     }
     
-    // Clean up temporary file
+    // Clean up temporary .dat file
     remove(reportFileName);
     
     if (errorOccurred == 0) {
-        // Display the report
-        GenerateReportHeader();
-        printf("Products list ordered by ProductName + Continent + Country + State + City\n");
-        printf("Using %s Sort Algorithm\n", sortType);
-        printf("------------------------------------------------------------------------------------------------------------------------\n");
+        // Generate the report to both file and console
+        sprintf(reportTitle, "Report 2: Products list ordered by ProductName + Continent + Country + State + City");
+        GenerateReportHeader(txtFile, reportTitle);
         
-        // Read and display sorted data
+        // Read and display sorted data with duplicate elimination
         sortedFile = OpenFileWithErrorCheck(sortedFileName, "rb");
         if (sortedFile != NULL) {
+            char previousContinent[20] = {0};          // Previous continent for duplicate check
+            char previousCountry[20] = {0};            // Previous country for duplicate check
+            char previousState[30] = {0};              // Previous state for duplicate check
+            char previousCity[40] = {0};               // Previous city for duplicate check
+            int locationCount = 0;                     // Count of unique locations for current product
+            long totalRecordsInFile = 0;               // Total records in sorted file
+            long startPosition = 0;                    // Starting position for reading
+            int actualLimit = 0;                       // Actual limit considering max display
+            
+            // Count total records in file
+            fseek(sortedFile, 0, SEEK_END);
+            totalRecordsInFile = ftell(sortedFile) / sizeof(productCustomerRecord);
+            
+            // Determine actual limit
+            if (maxDisplayRecords == 0 || maxDisplayRecords > totalRecordsInFile) {
+                actualLimit = totalRecordsInFile;
+            } else {
+                actualLimit = maxDisplayRecords;
+            }
+            
+            // Determine starting position based on sort order
+            if (ascending == 1) {
+                startPosition = 0;  // Start from beginning for ascending
+            } else {
+                startPosition = totalRecordsInFile - actualLimit;  // Start from end for descending
+                if (startPosition < 0) startPosition = 0;
+            }
+            
+            fseek(sortedFile, startPosition * sizeof(productCustomerRecord), SEEK_SET);
+            
             while (fread(&displayRecord, sizeof(productCustomerRecord), 1, sortedFile) == 1) {
                 recordCount++;
                 
-                // Only display first MAX_DISPLAY_RECORDS to avoid overwhelming output
-                if (displayCount < MAX_DISPLAY_RECORDS) {
+                // Only display up to actualLimit
+                if (displayCount < actualLimit) {
                     // Check if this is a new product
                     if (strcmp(currentProductName, displayRecord.product.productName) != 0) {
                         if (strlen(currentProductName) > 0) {
-                            printf("\n");              // Add blank line between products
+                            WriteToReport(txtFile, "\n");  // Add blank line between products
                         }
                         strncpy(currentProductName, displayRecord.product.productName, 30);
                         currentProductName[30] = '\0';
-                        printf("ProductName: %s\n", displayRecord.product.productName);
+                        WriteToReport(txtFile, "ProductName: %s\n", displayRecord.product.productName);
+                        
+                        // Reset duplicate tracking for new product
+                        previousContinent[0] = '\0';
+                        previousCountry[0] = '\0';
+                        previousState[0] = '\0';
+                        previousCity[0] = '\0';
+                        locationCount = 0;
                     }
                     
-                    printf("    %s %s %s %s\n", 
-                           displayRecord.customer.continent,
-                           displayRecord.customer.country,
-                           displayRecord.customer.state,
-                           displayRecord.customer.city);
+                    // Check if this location is a duplicate
+                    int isDuplicate = 0;
+                    if (strcmp(previousContinent, displayRecord.customer.continent) == 0 &&
+                        strcmp(previousCountry, displayRecord.customer.country) == 0 &&
+                        strcmp(previousState, displayRecord.customer.state) == 0 &&
+                        strcmp(previousCity, displayRecord.customer.city) == 0) {
+                        isDuplicate = 1;
+                    }
+                    
+                    // Only print if not duplicate
+                    if (isDuplicate == 0) {
+                        WriteToReport(txtFile, "    %s %s %s %s\n", 
+                               displayRecord.customer.continent,
+                               displayRecord.customer.country,
+                               displayRecord.customer.state,
+                               displayRecord.customer.city);
+                        
+                        // Save current location for next comparison
+                        strncpy(previousContinent, displayRecord.customer.continent, 19);
+                        previousContinent[19] = '\0';
+                        strncpy(previousCountry, displayRecord.customer.country, 19);
+                        previousCountry[19] = '\0';
+                        strncpy(previousState, displayRecord.customer.state, 29);
+                        previousState[29] = '\0';
+                        strncpy(previousCity, displayRecord.customer.city, 39);
+                        previousCity[39] = '\0';
+                        locationCount++;
+                    }
                     
                     displayCount++;
                 }
             }
             
             fclose(sortedFile);
+            sortedFile = NULL;
             
-            if (recordCount > MAX_DISPLAY_RECORDS) {
-                printf("\n... and %d more records (showing first %d)\n", 
-                       recordCount - MAX_DISPLAY_RECORDS, MAX_DISPLAY_RECORDS);
+            if (maxDisplayRecords > 0 && recordCount > maxDisplayRecords) {
+                WriteToReport(txtFile, "\n... Total records: %d (showing %d)\n", 
+                       (int)totalRecordsInFile, actualLimit);
             }
             
-            printf("\nTotal records in report: %d\n", recordCount);
-            printf("Report saved to: %s\n", sortedFileName);
+            // Now check for products with no sales
+            WriteToReport(txtFile, "\n");
+            productsFile = OpenFileWithErrorCheck("ProductsTable.dat", "rb");
+            if (productsFile != NULL) {
+                int productsWithoutSales = 0;
+                
+                // Reopen sorted file for searching
+                sortedFile = OpenFileWithErrorCheck(sortedFileName, "rb");
+                
+                while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1) {
+                    int productHasSales = 0;
+                    
+                    // Search for this product in the sorted results
+                    if (sortedFile != NULL) {
+                        rewind(sortedFile);
+                        while (fread(&displayRecord, sizeof(productCustomerRecord), 1, sortedFile) == 1 && productHasSales == 0) {
+                            if (displayRecord.product.productKey == currentProduct.productKey) {
+                                productHasSales = 1;
+                            }
+                        }
+                    }
+                    
+                    // If product has no sales, display it
+                    if (productHasSales == 0) {
+                        WriteToReport(txtFile, "ProductName: %s\n", currentProduct.productName);
+                        WriteToReport(txtFile, "    - No sales reported\n\n");
+                        productsWithoutSales++;
+                    }
+                }
+                
+                fclose(productsFile);
+                if (sortedFile != NULL) {
+                    fclose(sortedFile);
+                    sortedFile = NULL;
+                }
+                
+                if (productsWithoutSales > 0) {
+                    WriteToReport(txtFile, "Products without sales: %d\n", productsWithoutSales);
+                }
+            }
             
-            GenerateReportFooter(startTime);
+            WriteToReport(txtFile, "\nTotal records in report: %d\n", recordCount);
+            
+            GenerateReportFooter(txtFile, startTime);
+            
+            // Close text report file
+            if (txtFile != NULL) {
+                fclose(txtFile);
+                txtFile = NULL;
+            }
+            
+            // Success message
+            printf("\nReporte guardado exitosamente en: %s\n", txtFileName);
+            
+            // Ask user if they want to search for specific products
+            printf("\nDo you want to search for specific products in this report? (y/n): ");
+            char searchChoice = 'n';
+            scanf(" %c", &searchChoice);
+            
+            if (searchChoice == 'y' || searchChoice == 'Y') {
+                SearchInReport2(sortedFileName);
+            }
+            
+            // Clean up sorted .dat file after search is done
+            remove(sortedFileName);
         } else {
             printf("Error: Cannot open sorted report file\n");
+            if (txtFile != NULL) {
+                fclose(txtFile);
+            }
+            remove(txtFileName);  // Remove incomplete report
+        }
+    } else {
+        // Error occurred - clean up text file if opened
+        if (txtFile != NULL) {
+            fclose(txtFile);
+            remove(txtFileName);  // Remove incomplete report
         }
     }
     
     // No explicit return needed for void function - single implicit return point
 }//end function definition GenerateReport2ProductTypesAndLocations
+
+/*
+ * Function: GenerateReport5CustomerSalesListing
+ * Purpose: Generates Report 5 - Customer Sales Listing ordered by Customer Name + Order Date + ProductKey
+ * Parameters: sortType - "Bubble" or "Merge" to specify sorting algorithm
+ * Returns: void
+ * Note: Includes currency conversion, grouping by customer and order, with subtotals and grand total
+ *       Generates timestamped .txt file with formatted report
+ *       Cleans up all temporary files after completion
+ */
+void GenerateReport5CustomerSalesListing(const char* sortType) {
+    FILE* salesFile = NULL;                            // Sales table file
+    FILE* customersFile = NULL;                        // Customers table file
+    FILE* productsFile = NULL;                         // Products table file
+    FILE* reportFile = NULL;                           // Combined report data file
+    FILE* sortedFile = NULL;                           // Sorted report file
+    FILE* txtFile = NULL;                              // Output text report file
+    salesRecord currentSale;                           // Current sales record
+    customerRecord currentCustomer;                    // Current customer record
+    productRecord currentProduct;                      // Current product record
+    salesCustomerRecord combinedRecord;                // Combined sales-customer record
+    salesCustomerRecord displayRecord;                 // Record for display
+    char reportFileName[300] = {0};                    // Generated report file name
+    char sortedFileName[300] = {0};                    // Sorted report file name
+    char txtFileName[300] = {0};                       // Text report file name
+    char reportTitle[150] = {0};                       // Report title
+    char currentCustomerName[40] = {0};                // Current customer name for grouping
+    long currentOrderNumber = -1;                      // Current order number for grouping
+    double orderSubtotal = 0.0;                        // Subtotal for current order
+    double customerTotal = 0.0;                        // Total for current customer
+    double grandTotal = 0.0;                           // Grand total for all sales
+    int recordsProcessed = 0;                          // Number of records processed
+    int recordsSorted = 0;                             // Number of records sorted
+    int recordCount = 0;                               // Total records in sorted file
+    int maxDisplayRecords = 0;                         // Maximum records to display (0 = all)
+    int ascending = 1;                                 // Sort order (1 = ascending, 0 = descending)
+    time_t startTime = 0;                              // Report generation start time
+    time_t sortStartTime = 0;                          // Sorting start time
+    time_t sortEndTime = 0;                            // Sorting end time
+    int errorOccurred = 0;                             // Error flag (single return pattern)
+    int filesOpenSuccess = 0;                          // Flag for file opening success
+    int customerFound = 0;                             // Flag for customer match
+    int continueCustomerSearch = 1;                    // Control flag for customer search
+    int sortTypeValid = 0;                             // Flag for sort type validation
+    int firstRecord = 1;                               // Flag for first record
+    
+    printf("\nGenerating Report 5: Customer Sales Listing\n");
+    
+    // Get user preferences
+    if (GetReportPreferences(&maxDisplayRecords, &ascending) == 0) {
+        printf("Report generation cancelled.\n");
+        return;
+    }
+    
+    printf("Using %s sort algorithm...\n", sortType);
+    
+    time(&startTime);
+    
+    // Generate text report filename with timestamp
+    sprintf(txtFileName, "Report_5_Sales_%s_%ld.txt", sortType, (long)time(NULL));
+    
+    // Open text file for report output
+    txtFile = OpenFileWithErrorCheck(txtFileName, "w");
+    if (txtFile == NULL) {
+        printf("Error: Cannot create report text file\n");
+        return;                                        // Early return on file creation failure
+    }
+    
+    // Create temporary file for combined data
+    sprintf(reportFileName, "temp_report5_%ld.dat", (long)time(NULL));
+    reportFile = OpenFileWithErrorCheck(reportFileName, "wb+");
+    if (reportFile == NULL) {
+        printf("Error: Cannot create temporary report file\n");
+        fclose(txtFile);
+        remove(txtFileName);
+        errorOccurred = 1;
+    }
+    
+    if (errorOccurred == 0) {
+        // Open all required tables
+        salesFile = OpenFileWithErrorCheck("SalesTable.dat", "rb");
+        customersFile = OpenFileWithErrorCheck("CustomersTable.dat", "rb");
+        
+        if (salesFile != NULL && customersFile != NULL) {
+            filesOpenSuccess = 1;
+        } else {
+            printf("Error: Cannot open all required table files\n");
+            errorOccurred = 1;
+        }
+    }
+    
+    if (errorOccurred == 0 && filesOpenSuccess == 1) {
+        printf("Joining sales and customers data...\n");
+        
+        // Process each sales record
+        while (fread(&currentSale, sizeof(salesRecord), 1, salesFile) == 1 && errorOccurred == 0) {
+            customerFound = 0;
+            continueCustomerSearch = 1;
+            
+            // Find matching customer
+            rewind(customersFile);
+            while (fread(&currentCustomer, sizeof(customerRecord), 1, customersFile) == 1 && continueCustomerSearch == 1) {
+                if (currentCustomer.customerKey == currentSale.customerKey) {
+                    customerFound = 1;
+                    continueCustomerSearch = 0;        // Exit loop condition
+                }
+            }
+            
+            // If customer found, create combined record
+            if (customerFound == 1) {
+                InitializeStructureToZero(&combinedRecord, sizeof(salesCustomerRecord));
+                combinedRecord.sale = currentSale;
+                combinedRecord.customer = currentCustomer;
+                
+                // Write combined record to temporary file
+                if (fwrite(&combinedRecord, sizeof(salesCustomerRecord), 1, reportFile) == 1) {
+                    recordsProcessed++;
+                }
+            }
+        }
+        
+        printf("Data joining completed. %d combined records created.\n", recordsProcessed);
+        
+        if (recordsProcessed == 0) {
+            printf("No data to sort. Report generation cancelled.\n");
+            errorOccurred = 1;
+        }
+    }
+    
+    // Close table files
+    if (salesFile != NULL) fclose(salesFile);
+    if (customersFile != NULL) fclose(customersFile);
+    if (reportFile != NULL) fclose(reportFile);
+    
+    if (errorOccurred == 0) {
+        // Generate sorted filename
+        GenerateSortedFileName("Report5", sortType, sortedFileName);
+        
+        printf("Sorting data using %s sort...\n", sortType);
+        time(&sortStartTime);
+        
+        // Validate sort type and perform sorting
+        if (strcmp(sortType, "Bubble") == 0) {
+            sortTypeValid = 1;
+            recordsSorted = SortBubble(reportFileName, sortedFileName, 
+                                       sizeof(salesCustomerRecord), CompareSalesForReport5);
+        } else if (strcmp(sortType, "Merge") == 0) {
+            sortTypeValid = 1;
+            recordsSorted = SortMerge(reportFileName, sortedFileName, 
+                                      sizeof(salesCustomerRecord), CompareSalesForReport5);
+        } else {
+            printf("Error: Invalid sort type '%s'\n", sortType);
+            sortTypeValid = 0;
+            errorOccurred = 1;
+        }
+        
+        if (sortTypeValid == 1 && recordsSorted <= 0) {
+            printf("Error: Sorting failed\n");
+            errorOccurred = 1;
+        }
+        
+        if (sortTypeValid == 1 && recordsSorted > 0) {
+            time(&sortEndTime);
+            printf("Sorting completed: %d records sorted in %.0f seconds\n", 
+                   recordsSorted, difftime(sortEndTime, sortStartTime));
+        }
+    }
+    
+    // Clean up temporary .dat file
+    remove(reportFileName);
+    
+    if (errorOccurred == 0) {
+        // Generate the report to both file and console
+        sprintf(reportTitle, "Report 5: Customer list ordered by Customer name + order date for sale + Product Key");
+        GenerateReportHeader(txtFile, reportTitle);
+        
+        // Read and display sorted data with grouping
+        sortedFile = OpenFileWithErrorCheck(sortedFileName, "rb");
+        productsFile = OpenFileWithErrorCheck("ProductsTable.dat", "rb");
+        
+        if (sortedFile != NULL && productsFile != NULL) {
+            long totalRecordsInFile = 0;               // Total records in sorted file
+            long startPosition = 0;                    // Starting position for reading
+            int actualLimit = 0;                       // Actual limit considering max display
+            int displayedRecords = 0;                  // Counter for displayed records
+            
+            // Count total records in file
+            fseek(sortedFile, 0, SEEK_END);
+            totalRecordsInFile = ftell(sortedFile) / sizeof(salesCustomerRecord);
+            
+            // Determine actual limit
+            if (maxDisplayRecords == 0 || maxDisplayRecords > totalRecordsInFile) {
+                actualLimit = totalRecordsInFile;
+            } else {
+                actualLimit = maxDisplayRecords;
+            }
+            
+            // Determine starting position based on sort order
+            if (ascending == 1) {
+                startPosition = 0;  // Start from beginning for ascending
+            } else {
+                startPosition = totalRecordsInFile - actualLimit;  // Start from end for descending
+                if (startPosition < 0) startPosition = 0;
+            }
+            
+            fseek(sortedFile, startPosition * sizeof(salesCustomerRecord), SEEK_SET);
+            
+            while (fread(&displayRecord, sizeof(salesCustomerRecord), 1, sortedFile) == 1 && displayedRecords < actualLimit) {
+                recordCount++;
+                int productFound = 0;
+                int continueProductSearch = 1;
+                double lineValue = 0.0;
+                
+                // Find product information
+                rewind(productsFile);
+                while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1 && continueProductSearch == 1) {
+                    if (currentProduct.productKey == displayRecord.sale.productKey) {
+                        productFound = 1;
+                        continueProductSearch = 0;
+                    }
+                }
+                
+                // Check if we're starting a new customer
+                if (strcmp(currentCustomerName, displayRecord.customer.name) != 0) {
+                    // Print previous customer total if not first record
+                    if (firstRecord == 0) {
+                        WriteToReport(txtFile, "%90s%12s\n", "TOTAL", "");
+                        WriteToReport(txtFile, "%102.2f\n", customerTotal);
+                        WriteToReport(txtFile, "----------------------------------------------------------------------------------------------------------------------\n");
+                    }
+                    
+                    // New customer - print header
+                    strncpy(currentCustomerName, displayRecord.customer.name, 39);
+                    currentCustomerName[39] = '\0';
+                    customerTotal = 0.0;
+                    currentOrderNumber = -1;
+                    firstRecord = 0;
+                    
+                    WriteToReport(txtFile, "Costumer name: %s\n", currentCustomerName);
+                }
+                
+                // Check if we're starting a new order
+                if (currentOrderNumber != displayRecord.sale.orderNumber) {
+                    // Print previous order subtotal if not first order for this customer
+                    if (currentOrderNumber != -1) {
+                        WriteToReport(txtFile, "%90s%12.2f\n", "Subtotal", orderSubtotal);
+                    }
+                    
+                    // New order
+                    currentOrderNumber = displayRecord.sale.orderNumber;
+                    orderSubtotal = 0.0;
+                    
+                    WriteToReport(txtFile, "Order date:  %04u/%02u/%02u   Order Number: %ld\n", 
+                           displayRecord.sale.orderDate.yearValue,
+                           displayRecord.sale.orderDate.monthOfYear,
+                           displayRecord.sale.orderDate.dayOfMonth,
+                           currentOrderNumber);
+                    WriteToReport(txtFile, "  ProductKey       ProductName%52sQuantity%8sValue USD\n", "", "");
+                }
+                
+                // Calculate line value
+                if (productFound == 1) {
+                    lineValue = currentProduct.unitPriceUSD * displayRecord.sale.quantity;
+                    lineValue = RoundToThirdDecimal(lineValue);
+                    
+                    // Print line item
+                    WriteToReport(txtFile, "%5u%18s%-50s%8u%15.2f\n",
+                           displayRecord.sale.productKey,
+                           "",
+                           currentProduct.productName,
+                           displayRecord.sale.quantity,
+                           lineValue);
+                    
+                    // Accumulate totals
+                    orderSubtotal += lineValue;
+                    customerTotal += lineValue;
+                    grandTotal += lineValue;
+                } else {
+                    WriteToReport(txtFile, "%5u%18s%-50s%8u%15s\n",
+                           displayRecord.sale.productKey,
+                           "",
+                           "[Product Not Found]",
+                           displayRecord.sale.quantity,
+                           "N/A");
+                }
+                
+                displayedRecords++;  // Increment displayed records counter
+            }
+            
+            // Print last order subtotal and customer total
+            if (currentOrderNumber != -1) {
+                WriteToReport(txtFile, "%90s%12.2f\n", "Subtotal", orderSubtotal);
+            }
+            
+            if (firstRecord == 0) {
+                WriteToReport(txtFile, "%90s%12s\n", "TOTAL", "");
+                WriteToReport(txtFile, "%102.2f\n", customerTotal);
+                WriteToReport(txtFile, "----------------------------------------------------------------------------------------------------------------------\n");
+            }
+            
+            // Print grand total
+            WriteToReport(txtFile, "\n");
+            WriteToReport(txtFile, "\nTotal records in report: %d\n", recordCount);
+            
+            if (maxDisplayRecords > 0 && totalRecordsInFile > maxDisplayRecords) {
+                WriteToReport(txtFile, "(Showing %d of %ld total records)\n", actualLimit, totalRecordsInFile);
+            }
+            
+            fclose(sortedFile);
+            fclose(productsFile);
+            
+            GenerateReportFooter(txtFile, startTime);
+            
+            // Close text report file
+            if (txtFile != NULL) {
+                fclose(txtFile);
+                txtFile = NULL;
+            }
+            
+            // Success message
+            printf("\nReporte guardado exitosamente en: %s\n", txtFileName);
+            
+            // Ask user if they want to search for specific customers
+            printf("\nDo you want to search for specific customers in this report? (y/n): ");
+            char searchChoice = 'n';
+            scanf(" %c", &searchChoice);
+            
+            if (searchChoice == 'y' || searchChoice == 'Y') {
+                SearchInReport5(sortedFileName);
+            }
+            
+            // Clean up sorted .dat file after search is done
+            remove(sortedFileName);
+        } else {
+            printf("Error: Cannot open sorted report file or products file\n");
+            if (txtFile != NULL) {
+                fclose(txtFile);
+            }
+            if (sortedFile != NULL) {
+                fclose(sortedFile);
+            }
+            if (productsFile != NULL) {
+                fclose(productsFile);
+            }
+            remove(txtFileName);  // Remove incomplete report
+        }
+    } else {
+        // Error occurred - clean up text file if opened
+        if (txtFile != NULL) {
+            fclose(txtFile);
+            remove(txtFileName);  // Remove incomplete report
+        }
+    }
+    
+    // No explicit return needed for void function - single implicit return point
+}//end function definition GenerateReport5CustomerSalesListing
 
 // ====================== MAIN ALGORITHMS ======================
 
@@ -2516,11 +3372,12 @@ int SortBubble(const char* inputFileName, const char* outputFileName, size_t rec
 /*
  * Function: GenerateReportHeader
  * Purpose: Generates standardized header for all reports with company info and timestamp
- * Parameters: None
+ * Parameters: txtFile - FILE pointer to report text file (can be NULL for console-only)
+ *            reportTitle - specific title for this report
  * Returns: void
- * Note: Clears screen and displays formatted header with current date/time
+ * Note: Writes to both file and console using WriteToReport helper
  */
-void GenerateReportHeader() {
+void GenerateReportHeader(FILE* txtFile, const char* reportTitle) {
     ClearOutput();
     time_t currentTime;                    // Current system time for timestamp
     struct tm *localTime;                  // Local time structure for formatting
@@ -2529,22 +3386,24 @@ void GenerateReportHeader() {
     time(&currentTime);
     localTime = localtime(&currentTime);
     strftime(timeBuffer, sizeof(timeBuffer), "Valid to %Y-%m-%d at %H:%M hours\n", localTime);
-    printf("------------------------------------------------------------------------------------------------------------------------\n"
-           "Company Global Electronics Retailer\n"
-           "%s"
-           "Products list ordered by ProductName + Continent + Country + State + City\n", timeBuffer
-        );
-    return;
+    
+    WriteToReport(txtFile, "------------------------------------------------------------------------------------------------------------------------\n");
+    WriteToReport(txtFile, "Company Global Electronics Retailer\n");
+    WriteToReport(txtFile, "%s", timeBuffer);
+    WriteToReport(txtFile, "%s\n", reportTitle);
+    WriteToReport(txtFile, "------------------------------------------------------------------------------------------------------------------------\n");
 }//end function definition GenerateReportHeader
 
 /*
  * Function: GenerateReportFooter
  * Purpose: Generates standardized footer for all reports with execution time
- * Parameters: startTime - time_t when report processing started
+ * Parameters: txtFile - FILE pointer to report text file (can be NULL for console-only)
+ *            startTime - time_t when report processing started
  * Returns: void
  * Note: Calculates and displays execution time in minutes and seconds
+ *       Writes to both file and console using WriteToReport helper
  */
-void GenerateReportFooter(time_t startTime) {
+void GenerateReportFooter(FILE* txtFile, time_t startTime) {
     time_t endTime;                        // End time for execution time calculation
     double elapsedTime;                    // Total elapsed time in seconds
     int executionMinutes;                  // Minutes portion of execution time
@@ -2554,10 +3413,11 @@ void GenerateReportFooter(time_t startTime) {
     elapsedTime = difftime(endTime, startTime);
     executionMinutes = (int)(elapsedTime / 60);
     executionSeconds = (int)(elapsedTime) % 60;
-    printf("------------------------------------------------------------------------------------------------------------------------\n");
-    printf("Time used to produce this listing: %d'%d\"\n", executionMinutes, executionSeconds);
-    printf("***************************LAST LINE OF THE REPORT***************************\n");
-    printf("------------------------------------------------------------------------------------------------------------------------\n");
+    
+    WriteToReport(txtFile, "------------------------------------------------------------------------------------------------------------------------\n");
+    WriteToReport(txtFile, "Time used to produce this listing: %d'%d\"\n", executionMinutes, executionSeconds);
+    WriteToReport(txtFile, "***************************LAST LINE OF THE REPORT***************************\n");
+    WriteToReport(txtFile, "------------------------------------------------------------------------------------------------------------------------\n");
     return;
 }//end function definition GenerateReportFooter
 
@@ -3481,12 +4341,6 @@ void ShowMainMenu(void) {
         "5. List of sales order by \"Costumer Name\"+\"Order Date\"+\"ProductKey\";\n"
         "\t5.1 Utility bubbleSort\n"
         "\t5.2 Utility mergeSort\n"
-        "6. TEST: Sort Tables (temporary option for testing)\n"
-        "\t6.1 Test Sales Bubble Sort\n"
-        "\t6.2 Test Sales Merge Sort\n"
-        "\t6.3 Test Stores Bubble Sort (small dataset)\n"
-        "\t6.4 Test Stores Merge Sort (small dataset)\n"
-        "7. TEST: Binary Search (search for ProductKey in sorted data)\n"
         "What is your option: "
     );
     return;
@@ -3508,7 +4362,7 @@ void ExecuteMainProgramLoop() {
         ClearOutput();
         ShowMainMenu();
 
-        if ((scanf("%lf", &selectedOption) != 1) || selectedOption < 0.0 || selectedOption > 7.0) {
+        if ((scanf("%lf", &selectedOption) != 1) || selectedOption < 0.0 || selectedOption > 5.0) {
             printf("Invalid option. Please try again.\n");
             while (getchar() != '\n');                 // Clean input buffer to prevent infinite loop
             system("pause");
@@ -3596,41 +4450,35 @@ void ExecuteMainProgramLoop() {
         }
         else if (mainOption == 5)  // Report: Customer sales listing
         {
-            printf("Report 5 not yet implemented. Coming soon!\n");
-            // TODO: Implement customer sales listing with currency conversion
-            system("pause");
-        }
-        else if (mainOption == 6)  // TEST: Sort Tables
-        {
-            int testSubOption = 0;                     // Sub-menu selection
-            printf("\nSelect sorting test:\n");
-            printf("1. Sales Bubble Sort\n");
-            printf("2. Sales Merge Sort\n");
-            printf("3. Stores Bubble Sort (small dataset)\n");
-            printf("4. Stores Merge Sort (small dataset)\n");
-            printf("Your choice: ");
-            
-            if (scanf("%d", &testSubOption) == 1) {
-                if (testSubOption == 1) {
-                    TestSortSalesTable("Bubble");
-                } else if (testSubOption == 2) {
-                    TestSortSalesTable("Merge");
-                } else if (testSubOption == 3) {
-                    TestSortStoresTable("Bubble");
-                } else if (testSubOption == 4) {
-                    TestSortStoresTable("Merge");
+            if (subOption == 1) {
+                // Option 5.1: Use Bubble Sort
+                GenerateReport5CustomerSalesListing("Bubble");
+            } else if (subOption == 2) {
+                // Option 5.2: Use Merge Sort
+                GenerateReport5CustomerSalesListing("Merge");
+            } else if (subOption == 0) {
+                // Option 5: Ask user to choose sorting method
+                int sortChoice = 0;
+                printf("\nSelect sorting algorithm:\n");
+                printf("1. Bubble Sort\n");
+                printf("2. Merge Sort\n");
+                printf("Your choice: ");
+                
+                if (scanf("%d", &sortChoice) == 1) {
+                    if (sortChoice == 1) {
+                        GenerateReport5CustomerSalesListing("Bubble");
+                    } else if (sortChoice == 2) {
+                        GenerateReport5CustomerSalesListing("Merge");
+                    } else {
+                        printf("Invalid sorting choice.\n");
+                    }
                 } else {
-                    printf("Invalid sub-option selected.\n");
+                    printf("Invalid input.\n");
+                    while (getchar() != '\n'); // Clean input buffer
                 }
             } else {
-                printf("Invalid input.\n");
-                while (getchar() != '\n'); // Clean input buffer
+                printf("Invalid sub-option for Report 5. Use 5.1 or 5.2\n");
             }
-            system("pause");
-        }
-        else if (mainOption == 7 && subOption == 0)  // TEST: Binary Search
-        {
-            TestBinarySearch();
             system("pause");
         }
         else {
