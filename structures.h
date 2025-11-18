@@ -1,7 +1,7 @@
 /*
- * Publication Date: November 16, 2025
- * Time: 20:32
- * Version: 1.0.0
+ * Publication Date: November 17, 2025
+ * Time: 20:20
+ * Version: 1.1.1
  * Author: Ing(c) Andres David Rincon Salazar
  * Language Used: C (ISO/IEC)
  * Language Version: C11
@@ -23,6 +23,12 @@
  *
  * All field sizes match exactly the data dictionary specifications from the
  * IS284 final project requirements.
+ * 
+ * Critical Design Philosophy:
+ * - All operations are file-based (no complete data loading to RAM)
+ * - Structures optimized for binary file storage and sequential/random access
+ * - Fixed-size fields for predictable memory layout and file positioning
+ * - Support for doubly-linked list file structures for efficient sorting
  */
 
 #ifndef STRUCTURES_H

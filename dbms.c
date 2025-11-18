@@ -1,7 +1,7 @@
 /*
- * Publication Date: November 16, 2025
- * Time: 20:32
- * Version: 1.0.0
+ * Publication Date: November 17, 2025
+ * Time: 20:19
+ * Version: 2.0
  * Author: Ing(c) Andres David Rincon Salazar
  * Language Used: C (ISO/IEC)
  * Language Version: C11
@@ -17,7 +17,8 @@
  *
  * Key Features:
  * - Converts CSV files to binary format for efficient processing
- * - Implements bubble sort and merge sort algorithms for data ordering
+ * - Implements bubble sort and merge sort algorithms for data ordering (file-based)
+ * - Implements binary search for efficient data retrieval
  * - Generates formatted reports with timing information
  * - Handles currency conversion using exchange rates by date
  * - Provides menu-driven interface for data analysis
@@ -450,14 +451,16 @@ int WriteNodeToList(FILE* listFile, long nodeOffset, const void* dataBuffer, con
 
 /*
  * Function: SwapAdjacentNodesInList
- * Purpose: Swaps two adjacent nodes in the linked list by updating pointers
+ * Purpose: Swaps data between two adjacent nodes in the linked list
  * Parameters: listFile - open linked list file pointer
  *            node1Offset - offset to first node
  *            node2Offset - offset to second node (must be node1's next)
  *            recordSize - size of record data
  * Returns: int - 1 on success, 0 on failure
- * Note: Only updates prev/next pointers, doesn't move data physically
- *       This is the key optimization: O(1) pointer updates instead of O(n) data moves
+ * Note: Swaps ONLY the data payloads, not the node headers (prev/next pointers remain unchanged)
+ *       This is the correct and efficient approach for bubble sort in a doubly-linked list
+ *       O(1) complexity for the swap operation itself
+ *       Complies with file-based operations - no full data loading to RAM
  */
 int SwapAdjacentNodesInList(FILE* listFile, long node1Offset, long node2Offset, size_t recordSize) {
     DoublyLinkedNodeHeader node1Header;                // First node header
@@ -3166,6 +3169,8 @@ void GenerateReport4DeliveryTimeAnalysis(const char* sortType) {
 int GetReportPreferences(int* maxRecords, int* ascending) {
     int limitChoice = 0;
     int orderChoice = 0;
+    int returnValue = 1;  // Default success value
+    int errorOccurred = 0;  // Error flag for single return pattern
     
     printf("\n=== Report Configuration ===\n");
     
@@ -3178,45 +3183,56 @@ int GetReportPreferences(int* maxRecords, int* ascending) {
     if (scanf("%d", &limitChoice) != 1) {
         printf("Invalid input.\n");
         while (getchar() != '\n');
-        return 0;
+        errorOccurred = 1;
+        returnValue = 0;
     }
     
-    if (limitChoice == 1) {
-        *maxRecords = 0;  // 0 means all records
-    } else if (limitChoice == 2) {
-        printf("Enter the number of records to display: ");
-        if (scanf("%d", maxRecords) != 1 || *maxRecords < 1) {
-            printf("Invalid number.\n");
-            while (getchar() != '\n');
-            return 0;
+    if (errorOccurred == 0) {
+        if (limitChoice == 1) {
+            *maxRecords = 0;  // 0 means all records
+        } else if (limitChoice == 2) {
+            printf("Enter the number of records to display: ");
+            if (scanf("%d", maxRecords) != 1 || *maxRecords < 1) {
+                printf("Invalid number.\n");
+                while (getchar() != '\n');
+                errorOccurred = 1;
+                returnValue = 0;
+            }
+        } else {
+            printf("Invalid choice.\n");
+            errorOccurred = 1;
+            returnValue = 0;
         }
-    } else {
-        printf("Invalid choice.\n");
-        return 0;
     }
     
-    // Ask about sort order
-    printf("\nSort order:\n");
-    printf("1. Ascending (A-Z, 0-9)\n");
-    printf("2. Descending (Z-A, 9-0)\n");
-    printf("Your choice: ");
-    
-    if (scanf("%d", &orderChoice) != 1) {
-        printf("Invalid input.\n");
-        while (getchar() != '\n');
-        return 0;
+    // Ask about sort order only if no errors occurred
+    if (errorOccurred == 0) {
+        printf("\nSort order:\n");
+        printf("1. Ascending (A-Z, 0-9)\n");
+        printf("2. Descending (Z-A, 9-0)\n");
+        printf("Your choice: ");
+        
+        if (scanf("%d", &orderChoice) != 1) {
+            printf("Invalid input.\n");
+            while (getchar() != '\n');
+            errorOccurred = 1;
+            returnValue = 0;
+        }
     }
     
-    if (orderChoice == 1) {
-        *ascending = 1;
-    } else if (orderChoice == 2) {
-        *ascending = 0;
-    } else {
-        printf("Invalid choice.\n");
-        return 0;
+    if (errorOccurred == 0) {
+        if (orderChoice == 1) {
+            *ascending = 1;
+        } else if (orderChoice == 2) {
+            *ascending = 0;
+        } else {
+            printf("Invalid choice.\n");
+            errorOccurred = 1;
+            returnValue = 0;
+        }
     }
     
-    return 1;
+    return returnValue;  // Single return point
 }//end function definition GetReportPreferences
 
 /*
@@ -4116,7 +4132,8 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
             } else {
                 startPosition = totalRecordsInFile - 1;  // Start from last record for descending
             }
-            while (displayCount < actualLimit) {
+            int continueReading = 1;
+            while (displayCount < actualLimit && continueReading == 1) {
                 long currentPosition = 0;
                 
                 // Calculate position based on read direction
@@ -4130,31 +4147,35 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
                 
                 // Check if position is valid
                 if (currentPosition < 0 || currentPosition >= totalRecordsInFile) {
-                    break;  // Exit if we've gone beyond file bounds - EXCEPTION: this is the only valid use of break for boundary checking
+                    continueReading = 0;  // Exit if we've gone beyond file bounds
                 }
                 
                 // Seek to calculated position and read record
-                fseek(sortedFile, currentPosition * sizeof(productCustomerRecord), SEEK_SET);
-                if (fread(&displayRecord, sizeof(productCustomerRecord), 1, sortedFile) != 1) {
-                    break;  // Exit if read fails - EXCEPTION: this is the only valid use of break for I/O error
+                if (continueReading == 1) {
+                    fseek(sortedFile, currentPosition * sizeof(productCustomerRecord), SEEK_SET);
+                    if (fread(&displayRecord, sizeof(productCustomerRecord), 1, sortedFile) != 1) {
+                        continueReading = 0;  // Exit if read fails
+                    }
                 }
                 
-                recordCount++;
-                
-                // Check if this is a new product
-                if (strcmp(currentProductName, displayRecord.product.productName) != 0) {
-                    if (strlen(currentProductName) > 0) {
-                        WriteToReport(txtFile, "\n");  // Add blank line between products
-                    }
-                    // Copy full product name safely
-                    strncpy(currentProductName, displayRecord.product.productName, 29);
-                    currentProductName[29] = '\0';
-                    // Display the full product name from the record itself
-                    char fullProductName[31] = {0};
-                    strncpy(fullProductName, displayRecord.product.productName, 30);
-                    fullProductName[30] = '\0';
-                    WriteToReport(txtFile, "ProductName: %s\n", fullProductName);
-                        
+                // Only process record if read was successful
+                if (continueReading == 1) {
+                    recordCount++;
+                    
+                    // Check if this is a new product
+                    if (strcmp(currentProductName, displayRecord.product.productName) != 0) {
+                        if (strlen(currentProductName) > 0) {
+                            WriteToReport(txtFile, "\n");  // Add blank line between products
+                        }
+                        // Copy full product name safely
+                        strncpy(currentProductName, displayRecord.product.productName, 29);
+                        currentProductName[29] = '\0';
+                        // Display the full product name from the record itself
+                        char fullProductName[31] = {0};
+                        strncpy(fullProductName, displayRecord.product.productName, 30);
+                        fullProductName[30] = '\0';
+                        WriteToReport(txtFile, "ProductName: %s\n", fullProductName);
+                            
                         // Reset duplicate tracking for new product
                         previousContinent[0] = '\0';
                         previousCountry[0] = '\0';
@@ -4192,7 +4213,8 @@ void GenerateReport2ProductTypesAndLocations(const char* sortType) {
                         locationCount++;
                     }
                 
-                displayCount++;
+                    displayCount++;
+                }
             }
             
             fclose(sortedFile);
@@ -4492,7 +4514,8 @@ void GenerateReport5CustomerSalesListing(const char* sortType) {
                 startPosition = totalRecordsInFile - 1;  // Start from last record for descending
             }
             
-            while (displayedRecords < actualLimit) {
+            int continueReading = 1;
+            while (displayedRecords < actualLimit && continueReading == 1) {
                 long currentPosition = 0;
                 
                 // Calculate position based on read direction
@@ -4504,105 +4527,111 @@ void GenerateReport5CustomerSalesListing(const char* sortType) {
                 
                 // Check if position is valid
                 if (currentPosition < 0 || currentPosition >= totalRecordsInFile) {
-                    break;  // Exit if we've gone beyond file bounds - EXCEPTION: boundary checking
+                    continueReading = 0;  // Exit if we've gone beyond file bounds
                 }
                 
                 // Seek to calculated position and read record
-                fseek(sortedFile, currentPosition * sizeof(salesCustomerRecord), SEEK_SET);
-                if (fread(&displayRecord, sizeof(salesCustomerRecord), 1, sortedFile) != 1) {
-                    break;  // Exit if read fails - EXCEPTION: I/O error
-                }
-                recordCount++;
-                int productFound = 0;
-                int continueProductSearch = 1;
-                double lineValue = 0.0;
-                
-                // Find product information
-                rewind(productsFile);
-                while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1 && continueProductSearch == 1) {
-                    if (currentProduct.productKey == displayRecord.sale.productKey) {
-                        productFound = 1;
-                        continueProductSearch = 0;
+                if (continueReading == 1) {
+                    fseek(sortedFile, currentPosition * sizeof(salesCustomerRecord), SEEK_SET);
+                    if (fread(&displayRecord, sizeof(salesCustomerRecord), 1, sortedFile) != 1) {
+                        continueReading = 0;  // Exit if read fails
                     }
                 }
                 
-                // Check if we're starting a new customer
-                if (strcmp(currentCustomerName, displayRecord.customer.name) != 0) {
-                    // Print previous customer total if not first record
-                    if (firstRecord == 0) {
-                        WriteToReport(txtFile, "%90s%12s\n", "TOTAL", "");
-                        WriteToReport(txtFile, "%102.2f\n", customerTotal);
-                        WriteToReport(txtFile, "----------------------------------------------------------------------------------------------------------------------\n");
+                // Only process record if read was successful
+                if (continueReading == 1) {
+                    recordCount++;
+                    int productFound = 0;
+                    int continueProductSearch = 1;
+                    double lineValue = 0.0;
+                    
+                    // Find product information
+                    rewind(productsFile);
+                    while (fread(&currentProduct, sizeof(productRecord), 1, productsFile) == 1 && continueProductSearch == 1) {
+                        if (currentProduct.productKey == displayRecord.sale.productKey) {
+                            productFound = 1;
+                            continueProductSearch = 0;
+                        }
                     }
                     
-                    // New customer - print header
-                    strncpy(currentCustomerName, displayRecord.customer.name, 39);
-                    currentCustomerName[39] = '\0';
-                    customerTotal = 0.0;
-                    currentOrderNumber = -1;
-                    firstRecord = 0;
-                    
-                    WriteToReport(txtFile, "Costumer name: %s\n", currentCustomerName);
-                }
-                
-                // Check if we're starting a new order
-                if (currentOrderNumber != displayRecord.sale.orderNumber) {
-                    // Print previous order subtotal if not first order for this customer
-                    if (currentOrderNumber != -1) {
-                        WriteToReport(txtFile, "%90s%12.2f\n", "Subtotal", orderSubtotal);
+                    // Check if we're starting a new customer
+                    if (strcmp(currentCustomerName, displayRecord.customer.name) != 0) {
+                        // Print previous customer total if not first record
+                        if (firstRecord == 0) {
+                            WriteToReport(txtFile, "%90s%12s\n", "TOTAL", "");
+                            WriteToReport(txtFile, "%102.2f\n", customerTotal);
+                            WriteToReport(txtFile, "----------------------------------------------------------------------------------------------------------------------\n");
+                        }
+                        
+                        // New customer - print header
+                        strncpy(currentCustomerName, displayRecord.customer.name, 39);
+                        currentCustomerName[39] = '\0';
+                        customerTotal = 0.0;
+                        currentOrderNumber = -1;
+                        firstRecord = 0;
+                        
+                        WriteToReport(txtFile, "Costumer name: %s\n", currentCustomerName);
                     }
                     
-                    // New order
-                    currentOrderNumber = displayRecord.sale.orderNumber;
-                    orderSubtotal = 0.0;
+                    // Check if we're starting a new order
+                    if (currentOrderNumber != displayRecord.sale.orderNumber) {
+                        // Print previous order subtotal if not first order for this customer
+                        if (currentOrderNumber != -1) {
+                            WriteToReport(txtFile, "%90s%12.2f\n", "Subtotal", orderSubtotal);
+                        }
+                        
+                        // New order
+                        currentOrderNumber = displayRecord.sale.orderNumber;
+                        orderSubtotal = 0.0;
+                        
+                        WriteToReport(txtFile, "Order date:  %04u/%02u/%02u   Order Number: %ld\n", 
+                               displayRecord.sale.orderDate.yearValue,
+                               displayRecord.sale.orderDate.monthOfYear,
+                               displayRecord.sale.orderDate.dayOfMonth,
+                               currentOrderNumber);
+                        WriteToReport(txtFile, "  ProductKey       ProductName%52sQuantity%8sValue USD\n", "", "");
+                    }
                     
-                    WriteToReport(txtFile, "Order date:  %04u/%02u/%02u   Order Number: %ld\n", 
-                           displayRecord.sale.orderDate.yearValue,
-                           displayRecord.sale.orderDate.monthOfYear,
-                           displayRecord.sale.orderDate.dayOfMonth,
-                           currentOrderNumber);
-                    WriteToReport(txtFile, "  ProductKey       ProductName%52sQuantity%8sValue USD\n", "", "");
+                    // Calculate line value
+                    if (productFound == 1) {
+                        // Get unit price from product
+                        double unitPrice = currentProduct.unitPriceUSD;
+                        
+                        // Get currency code from sale transaction
+                        const char* currency = displayRecord.sale.currencyCode;
+                        
+                        // Get transaction date
+                        const dateStructure* date = &displayRecord.sale.orderDate;
+                        
+                        // Convert to USD using exchange rate for the transaction date
+                        double priceInUSD = ConvertCurrencyToUSD(unitPrice, currency, date);
+                        
+                        // Calculate line value with quantity and apply rounding
+                        lineValue = RoundToThirdDecimal(priceInUSD * displayRecord.sale.quantity);
+                        
+                        // Print line item
+                        WriteToReport(txtFile, "%11u%18s%-51s%8u%15.2f\n",
+                               displayRecord.sale.productKey,
+                               "",
+                               currentProduct.productName,
+                               displayRecord.sale.quantity,
+                               lineValue);
+                        
+                        // Accumulate totals
+                        orderSubtotal += lineValue;
+                        customerTotal += lineValue;
+                        grandTotal += lineValue;
+                    } else {
+                        WriteToReport(txtFile, "%11u%18s%-51s%8u%15s\n",
+                               displayRecord.sale.productKey,
+                               "",
+                               "[Product Not Found]",
+                               displayRecord.sale.quantity,
+                               "N/A");
+                    }
+                    
+                    displayedRecords++;  // Increment displayed records counter
                 }
-                
-                // Calculate line value
-                if (productFound == 1) {
-                    // Get unit price from product
-                    double unitPrice = currentProduct.unitPriceUSD;
-                    
-                    // Get currency code from sale transaction
-                    const char* currency = displayRecord.sale.currencyCode;
-                    
-                    // Get transaction date
-                    const dateStructure* date = &displayRecord.sale.orderDate;
-                    
-                    // Convert to USD using exchange rate for the transaction date
-                    double priceInUSD = ConvertCurrencyToUSD(unitPrice, currency, date);
-                    
-                    // Calculate line value with quantity and apply rounding
-                    lineValue = RoundToThirdDecimal(priceInUSD * displayRecord.sale.quantity);
-                    
-                    // Print line item
-                    WriteToReport(txtFile, "%11u%18s%-51s%8u%15.2f\n",
-                           displayRecord.sale.productKey,
-                           "",
-                           currentProduct.productName,
-                           displayRecord.sale.quantity,
-                           lineValue);
-                    
-                    // Accumulate totals
-                    orderSubtotal += lineValue;
-                    customerTotal += lineValue;
-                    grandTotal += lineValue;
-                } else {
-                    WriteToReport(txtFile, "%11u%18s%-51s%8u%15s\n",
-                           displayRecord.sale.productKey,
-                           "",
-                           "[Product Not Found]",
-                           displayRecord.sale.quantity,
-                           "N/A");
-                }
-                
-                displayedRecords++;  // Increment displayed records counter
             }
             
             // Print last order subtotal and customer total
