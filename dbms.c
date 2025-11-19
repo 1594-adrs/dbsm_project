@@ -6261,7 +6261,7 @@ void ExecuteMainProgramLoop() {
         ClearOutput();
         ShowMainMenu();
 
-        if ((scanf("%lf", &selectedOption) != 1) || selectedOption < 0.0 || selectedOption > 5.0) {
+        if ((scanf("%lf", &selectedOption) != 1) || selectedOption < 0.0 || selectedOption > 5.2) {
             printf("Invalid option. Please try again.\n");
             while (getchar() != '\n');                 // Clean input buffer to prevent infinite loop
             system("pause");
@@ -6312,14 +6312,17 @@ void ExecuteMainProgramLoop() {
                 GenerateReport2ProductTypesAndLocations("Merge");
             } else if (subOption == 0) {
                 // Option 2: Ask user to choose sorting method
-                int sortChoice = 0;
+                int sortChoice = -1;
                 printf("\nSelect sorting algorithm:\n");
+                printf("0. Return to main menu\n");
                 printf("1. Bubble Sort\n");
                 printf("2. Merge Sort\n");
                 printf("Your choice: ");
                 
                 if (scanf("%d", &sortChoice) == 1) {
-                    if (sortChoice == 1) {
+                    if (sortChoice == 0) {
+                        // Return to main menu (do nothing, just continue loop)
+                    } else if (sortChoice == 1) {
                         GenerateReport2ProductTypesAndLocations("Bubble");
                     } else if (sortChoice == 2) {
                         GenerateReport2ProductTypesAndLocations("Merge");
@@ -6345,14 +6348,17 @@ void ExecuteMainProgramLoop() {
                 GenerateReport3SeasonalPatterns("Merge");
             } else if (subOption == 0) {
                 // Option 3: Ask user to choose sorting method
-                int sortChoice = 0;
+                int sortChoice = -1;
                 printf("\nSelect sorting algorithm:\n");
+                printf("0. Return to main menu\n");
                 printf("1. Bubble Sort\n");
                 printf("2. Merge Sort\n");
                 printf("Your choice: ");
                 
                 if (scanf("%d", &sortChoice) == 1) {
-                    if (sortChoice == 1) {
+                    if (sortChoice == 0) {
+                        // Return to main menu (do nothing, just continue loop)
+                    } else if (sortChoice == 1) {
                         GenerateReport3SeasonalPatterns("Bubble");
                     } else if (sortChoice == 2) {
                         GenerateReport3SeasonalPatterns("Merge");
@@ -6378,19 +6384,22 @@ void ExecuteMainProgramLoop() {
                 GenerateReport4DeliveryTimeAnalysis("Merge");
             } else if (subOption == 0) {
                 // Option 4: Ask user to choose sorting method
-                int sortChoice = 0;
+                int sortChoice = -1;
                 printf("\nSelect sorting algorithm:\n");
+                printf("0. Return to main menu\n");
                 printf("1. Bubble Sort\n");
                 printf("2. Merge Sort\n");
                 printf("Your choice: ");
                 
                 if (scanf("%d", &sortChoice) == 1) {
-                    if (sortChoice == 1) {
+                    if (sortChoice == 0) {
+                        // Return to main menu (do nothing, just continue loop)
+                    } else if (sortChoice == 1) {
                         GenerateReport4DeliveryTimeAnalysis("Bubble");
                     } else if (sortChoice == 2) {
                         GenerateReport4DeliveryTimeAnalysis("Merge");
                     } else {
-                        printf("Invalid sort choice. Please choose 1 or 2.\n");
+                        printf("Invalid sort choice. Please choose 0, 1 or 2.\n");
                     }
                     while (getchar() != '\n'); // Clean input buffer
                 } else {
@@ -6412,14 +6421,17 @@ void ExecuteMainProgramLoop() {
                 GenerateReport5CustomerSalesListing("Merge");
             } else if (subOption == 0) {
                 // Option 5: Ask user to choose sorting method
-                int sortChoice = 0;
+                int sortChoice = -1;
                 printf("\nSelect sorting algorithm:\n");
+                printf("0. Return to main menu\n");
                 printf("1. Bubble Sort\n");
                 printf("2. Merge Sort\n");
                 printf("Your choice: ");
                 
                 if (scanf("%d", &sortChoice) == 1) {
-                    if (sortChoice == 1) {
+                    if (sortChoice == 0) {
+                        // Return to main menu (do nothing, just continue loop)
+                    } else if (sortChoice == 1) {
                         GenerateReport5CustomerSalesListing("Bubble");
                     } else if (sortChoice == 2) {
                         GenerateReport5CustomerSalesListing("Merge");
